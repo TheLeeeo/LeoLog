@@ -13,32 +13,44 @@ const (
 	defaultTimeFormat = "2006-01-02 [15:04:05]"
 )
 
-func NewHandler(opts *slog.HandlerOptions) *Handler {
-	if opts == nil {
-		opts = &slog.HandlerOptions{}
+func NewHandler(slogOpts *slog.HandlerOptions, leoOpts ...HandlerOption) *Handler {
+	if slogOpts == nil {
+		slogOpts = &slog.HandlerOptions{}
 	}
 	b := &bytes.Buffer{}
-	return &Handler{
+	h := &Handler{
 		b: b,
 		h: slog.NewJSONHandler(b, &slog.HandlerOptions{
-			Level:       opts.Level,
-			AddSource:   opts.AddSource,
-			ReplaceAttr: suppressDefaults(opts.ReplaceAttr),
+			Level:       slogOpts.Level,
+			AddSource:   slogOpts.AddSource,
+			ReplaceAttr: suppressDefaults(slogOpts.ReplaceAttr),
 		}),
-		m:          &sync.Mutex{},
-		timeFormat: defaultTimeFormat,
+		m: &sync.Mutex{},
+
+		cfg: config{
+			timeFormat: defaultTimeFormat,
+			escapeHTML: false,
+		},
 	}
+
+	for _, opt := range leoOpts {
+		opt(h)
+	}
+
+	return h
 }
 
 type Handler struct {
-	h          slog.Handler
-	b          *bytes.Buffer
-	m          *sync.Mutex
-	timeFormat string
+	h slog.Handler
+	b *bytes.Buffer
+	m *sync.Mutex
+
+	cfg config
 }
 
-func (h *Handler) SetTimeFormat(timeFormat string) {
-	h.timeFormat = timeFormat
+type config struct {
+	timeFormat string
+	escapeHTML bool
 }
 
 func (h *Handler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -68,7 +80,7 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	}
 
 	logMessage := fmt.Sprintf("%s %s %s",
-		colorize(lightGray, r.Time.Format(h.timeFormat)),
+		colorize(lightGray, r.Time.Format(h.cfg.timeFormat)),
 		level,
 		colorize(white, r.Message),
 	)
@@ -79,15 +91,19 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 			return err
 		}
 
-		bytes, err := json.MarshalIndent(attrs, "", "  ")
-		if err != nil {
+		buffer := &bytes.Buffer{}
+		encoder := json.NewEncoder(buffer)
+		encoder.SetIndent("", "  ")
+		encoder.SetEscapeHTML(h.cfg.escapeHTML)
+
+		if err = encoder.Encode(attrs); err != nil {
 			return fmt.Errorf("error when marshaling attrs: %w", err)
 		}
 
-		recordString := string(bytes)
+		recordString := buffer.String()
 		// It might begin with attributes but end up empty because they were skipped by a custom handler
 		if recordString != "{}" {
-			logMessage += " " + colorize(darkGray, string(bytes))
+			logMessage += " " + colorize(darkGray, recordString)
 		}
 	}
 
