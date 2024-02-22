@@ -6,6 +6,7 @@ It is originally based of [this guide](https://dusted.codes/creating-a-pretty-co
 It is used to print pretty logs, albeit not very fast.
 
 Do not use this for performance critical applications.
+Bechmarks can be found [here](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
 
 ## Usage
 
